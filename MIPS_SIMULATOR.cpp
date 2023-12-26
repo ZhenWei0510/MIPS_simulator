@@ -1,14 +1,14 @@
-#include <iostream>
 #include <fstream>
+#include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <sstream>
 
 using namespace std;
 
-# define REG_NUM 32
-# define DATA_MEM_SIZE 32
-# define INS_MEM_SIZE 32
+#define REG_NUM 32
+#define DATA_MEM_SIZE 32
+#define INS_MEM_SIZE 32
 
 // function prototype
 int load_instructions();
@@ -19,9 +19,8 @@ void MEM();
 void WB();
 
 struct Instruction {
-
     Instruction() {
-        this->op = "null"; // op 初始為 null
+        this->op = "null";  // op 初始為 null
     }
 
     Instruction(string op, int arg1, int arg2, int arg3) {
@@ -44,41 +43,79 @@ struct Instruction {
     int constant;
 };
 
-struct Pipeline_reg {
+// Pipeline register
+struct IF_ID_pipeline {
+    uint32_t PC;
+    Instruction ins;
+} IF_ID;
 
+struct ID_EX_pipeline {
+    // Seven Control Signals
     // EX
-    int RegDst;
-    int ALUSrc;
+    bool RegDst;
+    bool ALUSrc;
 
     // MEM
-    int Branch;
-    int MemRead;
-    int MemWrite;
+    bool Branch;
+    bool MemRead;
+    bool MemWrite;
 
     // WB
-    int RegWrite;
-    int MemToReg;
+    bool RegWrite;
+    bool MemToReg;
 
-
-    uint32_t ALU_result;
+    // PC
     uint32_t PC;
 
-    // 指令
-    Instruction ins;
-};
+    //
+    uint32_t Read_data_1;
+    uint32_t Read_data_2;
 
- // Program counter
+    // constant
+    uint32_t offset;
+
+    //
+    uint32_t rs;
+    uint32_t rt;
+    uint32_t rd;
+
+    string op;
+} ID_EX;
+
+struct EX_MEM_pipeline {
+    // MEM
+    bool Branch;
+    bool MemRead;
+    bool MemWrite;
+
+    // WB
+    bool RegWrite;
+    bool MemToReg;
+
+    uint32_t ALU_result;
+
+    uint32_t Write_data;
+    uint8_t Write_reg;
+} EX_MEM;
+
+struct MEM_WB_pipeline {
+    // WB
+    bool RegWrite;
+    bool MemToReg;
+
+    uint32_t Read_data;
+
+    uint32_t ALU_result;
+
+    uint8_t Write_reg;
+} MEM_WB;
+
+// Program counter
 uint32_t PC;
 
-uint32_t reg_file[REG_NUM]; // 32 個 register
-uint32_t data_mem[DATA_MEM_SIZE]; // 32 個 words (data memory)
-Instruction ins_mem[INS_MEM_SIZE]; // instruction memory
-
-// Pipeline register
-Pipeline_reg IF_ID;
-Pipeline_reg ID_EX;
-Pipeline_reg EX_MEM;
-Pipeline_reg MEM_WB;
+uint32_t reg_file[REG_NUM];         // 32 個 register
+uint32_t data_mem[DATA_MEM_SIZE];   // 32 個 words (data memory)
+Instruction ins_mem[INS_MEM_SIZE];  // instruction memory
 
 int main() {
     // 初始化 register
@@ -103,7 +140,7 @@ int main() {
     //     else
     //         cout << ins_mem[i].op << " " << ins_mem[i].rs << " " << ins_mem[i].rt << " " << ins_mem[i].constant << endl;
     // }
-    
+
     // int cycle = 1;
     // do {
     //     WB();
@@ -121,7 +158,6 @@ int main() {
 }
 
 int load_instructions() {
-
     string line;
     int ins_cnt = 0;
 
@@ -142,11 +178,10 @@ int load_instructions() {
         // 讀取參數
         char delimiter = ',';
         while (getline(ss, token, delimiter)) {
-
             // 去除頭尾空格
             int head = token.find_first_not_of(" ");
             int tail = token.find_last_not_of(" ");
-            token = token.substr(head, tail-head+1);
+            token = token.substr(head, tail - head + 1);
 
             tokens.push_back(token);
         }
@@ -154,7 +189,7 @@ int load_instructions() {
         // 寫入 instruction memory
         if (tokens[0] == "add" || tokens[0] == "sub") {
             for (int i = 1; i <= 3; i++) {
-                tokens[i] = tokens[i].substr(1, tokens[i].size()); // 取出 register 編號
+                tokens[i] = tokens[i].substr(1, tokens[i].size());  // 取出 register 編號
             }
 
             ins_mem[ins_cnt++] = Instruction(tokens[0], stoi(tokens[2]), stoi(tokens[3]), stoi(tokens[1]));
@@ -163,19 +198,18 @@ int load_instructions() {
             tokens[1] = tokens[1].substr(1, tokens[1].size());
             string tmp = tokens[2];
             int pos = tokens[2].find('(');
-            tokens[2] = tmp.substr(0, pos); // 取出括號前的數字
-            tokens.push_back(tmp.substr(pos+2, tmp.size()-pos-3)); // 取出 base register 編號
+            tokens[2] = tmp.substr(0, pos);                               // 取出括號前的數字
+            tokens.push_back(tmp.substr(pos + 2, tmp.size() - pos - 3));  // 取出 base register 編號
 
             ins_mem[ins_cnt++] = Instruction(tokens[0], stoi(tokens[3]), stoi(tokens[1]), stoi(tokens[2]));
 
         } else if (tokens[0] == "beq") {
             for (int i = 1; i <= 2; i++) {
-                tokens[i] = tokens[i].substr(1, tokens[i].size()); // 取出 register 編號
+                tokens[i] = tokens[i].substr(1, tokens[i].size());  // 取出 register 編號
             }
 
             ins_mem[ins_cnt++] = Instruction(tokens[0], stoi(tokens[1]), stoi(tokens[2]), stoi(tokens[3]));
         }
-
     }
 
     return ins_cnt;
