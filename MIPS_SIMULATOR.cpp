@@ -156,7 +156,6 @@ int main() {
     //         cout << ins_mem[i].op << " " << ins_mem[i].rs << " " << ins_mem[i].rt << " " << ins_mem[i].constant << endl;
     // }
 
-    
     do {
         cout << "Cycle " << cycle << endl;
         WB();
@@ -169,8 +168,7 @@ int main() {
 
         cycle++;
         if (cycle == 50) break;
-    } while (!(ins_mem[PC].op == "" && IF_ID.ins.op == "" && ID_EX.op == ""
-                && EX_MEM.op == "" && MEM_WB.op == ""));
+    } while (!(ins_mem[PC].op == "" && IF_ID.ins.op == "" && ID_EX.op == "" && EX_MEM.op == "" && MEM_WB.op == ""));
 
     return 0;
 }
@@ -281,8 +279,7 @@ void ID() {
         // Load-use hazard detection
         // cout << ID_EX.op << " " << ID_EX.MemRead << " " << (int)ID_EX.rt << " " << (int)IF_ID.ins.rs << " " << (int)IF_ID.ins.rt << endl;
         // cout << EX_MEM.op << " " << EX_MEM.MemRead << " " << (int)EX_MEM.Write_reg << " " << (int)IF_ID.ins.rs << " " << (int)IF_ID.ins.rt << endl;
-        if ((ID_EX.op != "" && ID_EX.MemRead == '1' && (ID_EX.rt == IF_ID.ins.rs || ID_EX.rt == IF_ID.ins.rt))
-            || (EX_MEM.op != "" && EX_MEM.MemRead == '1' && (EX_MEM.Write_reg == IF_ID.ins.rs || EX_MEM.Write_reg == IF_ID.ins.rt))) {
+        if ((ID_EX.op != "" && ID_EX.MemRead == '1' && (ID_EX.rt == IF_ID.ins.rs || ID_EX.rt == IF_ID.ins.rt)) || (EX_MEM.op != "" && EX_MEM.MemRead == '1' && (EX_MEM.Write_reg == IF_ID.ins.rs || EX_MEM.Write_reg == IF_ID.ins.rt))) {
             ID_tmp.RegDst = ID_tmp.ALUSrc = '0';
             ID_tmp.Branch = ID_tmp.MemRead = ID_tmp.MemWrite = '0';
             ID_tmp.RegWrite = ID_tmp.MemToReg = '0';
@@ -324,24 +321,33 @@ void ID() {
 
 void EX() {
     cout << "  EX: " << ID_EX.op << endl;
-    
+
     EX_tmp.Branch = ID_EX.Branch;
     EX_tmp.MemRead = ID_EX.MemRead;
     EX_tmp.MemWrite = ID_EX.MemWrite;
     EX_tmp.RegWrite = ID_EX.RegWrite;
     EX_tmp.MemToReg = ID_EX.MemToReg;
-    
+
     EX_tmp.op = ID_EX.op;
 
     EX_tmp.ALU_result = 123;
+    
+    // // ALUOp
+    // if (ID_EX.op == "add") {
+    //     EX_MEM.ALU_result = ID_EX.Read_data_1 + ID_EX.Read_data_2;
+    // } else if (ID_EX.op == "sub") {
+    //     EX_MEM.ALU_result = ID_EX.Read_data_1 - ID_EX.Read_data_2;
+    // } else if (ID_EX.op == "lw" || ID_EX.op == "sw") {
+    //     EX_MEM.ALU_result = ID_EX.Read_data_1 + ID_EX.offset;
+    // }
+    
+    // // ALU inputs
+    // uint32_t input_1 = ID_EX.Read_data_1;
+    // // Pass Read data 2 to Write_data
+    // EX_tmp.Write_data = ID_EX.Read_data_2;
 
-    EX_tmp.Write_data = ID_EX.Read_data_2;
-
-    if (ID_EX.RegDst == '0') {
-        EX_tmp.Write_reg = ID_EX.rt;
-    } else if (ID_EX.RegDst == '1') {
-        EX_tmp.Write_reg = ID_EX.rd;
-    }
+    // RegDst mux to choose rd or rt
+    EX_MEM.Write_reg = ID_EX.RegDst == '0' ? ID_EX.rt : ID_EX.rd;
 }
 
 void MEM() {
@@ -405,7 +411,6 @@ void update_pipeline_register() {
     ID_EX.rt = ID_tmp.rt;
     ID_EX.rd = ID_tmp.rd;
     ID_EX.offset = ID_tmp.offset;
-
 
     // EX_MEM
     EX_MEM.Branch = EX_tmp.Branch;
