@@ -178,7 +178,8 @@ int main() {
         cout << endl;
         if (cycle == 50) break;
     } while (!(ins_mem[PC].op == "" && IF_ID.ins.op == "" && ID_EX.op == "" && EX_MEM.op == "" && MEM_WB.op == ""));
-    cout << "Total cycles: " << cycle << endl << endl;
+    cout << "Total cycles: " << cycle << endl
+         << endl;
     for (int i = 0; i < REG_NUM; i++) {
         cout << "$" << i << " " << reg_file[i] << endl;
     }
@@ -272,12 +273,10 @@ void ID() {
         return;
     }
 
-    
-
     ID_tmp.Read_data_1 = reg_file[IF_ID.ins.rs];
     ID_tmp.Read_data_2 = reg_file[IF_ID.ins.rt];
 
-    ID_tmp.zero = ID_tmp.Read_data_1 == ID_tmp.Read_data_2 ? true :false;
+    ID_tmp.zero = ID_tmp.Read_data_1 == ID_tmp.Read_data_2 ? true : false;
 
     if (IF_ID.ins.op == "add" || IF_ID.ins.op == "sub") {
         ID_tmp.RegDst = '1';
@@ -362,9 +361,9 @@ void ID() {
 void EX() {
     cout << "   EX: " << ID_EX.op;
     if (ID_EX.op != "") {
-        cout << " " << ID_EX.RegDst << ID_EX.ALUSrc
-            << " " << ID_EX.Branch << ID_EX.MemRead << ID_EX.MemWrite
-            << " " << ID_EX.RegWrite << ID_EX.MemToReg;
+        cout << "\t" << ID_EX.RegDst << ID_EX.ALUSrc
+             << " " << ID_EX.Branch << ID_EX.MemRead << ID_EX.MemWrite
+             << " " << ID_EX.RegWrite << ID_EX.MemToReg;
     }
     cout << endl;
 
@@ -376,12 +375,35 @@ void EX() {
 
     EX_tmp.op = ID_EX.op;
 
-    // EX_tmp.ALU_result = 123;
-    
-    // // ALU inputs
+    // ALU inputs
     uint32_t input_1 = ID_EX.Read_data_1;
-    // Pass Read data 2 to Write_data
-    EX_tmp.Write_data = ID_EX.Read_data_2;
+    // ALUSrc mux to choose Read data 2 or offset
+    uint32_t input_2 = ID_EX.ALUSrc == '0' ? ID_EX.Read_data_2 : ID_EX.offset;
+
+    // EX hazard detection
+    bool hasEXhazard_rs = (EX_MEM.RegWrite == '1') && (EX_MEM.Write_reg != 0) && (EX_MEM.Write_reg == ID_EX.rs);
+    bool hasEXhazard_rt = (EX_MEM.RegWrite == '1') && (EX_MEM.Write_reg != 0) && (EX_MEM.Write_reg == ID_EX.rt);
+    // MEM hazard detection
+    bool hasMEMhazard_rs = (MEM_WB.RegWrite == '1') && (MEM_WB.Write_reg != 0) && (MEM_WB.Write_reg == ID_EX.rs);
+    bool hasMEMhazard_rt = (MEM_WB.RegWrite == '1') && (MEM_WB.Write_reg != 0) && (MEM_WB.Write_reg == ID_EX.rt);
+    // input_1
+    // Forward A = 10
+    if (hasEXhazard_rs) {
+        input_1 = EX_MEM.ALU_result;
+    }
+    // Forward A = 01
+    else if (hasMEMhazard_rs) {
+        input_1 = reg_file[MEM_WB.Write_reg];
+    }
+    // input_2
+    // Forward B = 10
+    if (hasEXhazard_rt) {
+        input_2 = EX_MEM.ALU_result;
+    }
+    // Forward B = 01
+    else if (hasMEMhazard_rt) {
+        input_2 = reg_file[MEM_WB.Write_reg];
+    }
 
     // // ALUOp
     if (ID_EX.op == "add") {
@@ -391,7 +413,7 @@ void EX() {
     } else if (ID_EX.op == "lw" || ID_EX.op == "sw") {
         EX_tmp.ALU_result = ID_EX.Read_data_1 + ID_EX.offset;
     }
-    
+
     // RegDst mux to choose rd or rt
     EX_tmp.Write_reg = ID_EX.RegDst == '0' ? ID_EX.rt : ID_EX.rd;
 
@@ -403,8 +425,8 @@ void EX() {
 void MEM() {
     cout << "  MEM: " << EX_MEM.op;
     if (EX_MEM.op != "") {
-        cout << " " << EX_MEM.Branch << EX_MEM.MemRead << EX_MEM.MemWrite
-            << " " << EX_MEM.RegWrite << EX_MEM.MemToReg;
+        cout << "\t" << EX_MEM.Branch << EX_MEM.MemRead << EX_MEM.MemWrite
+             << " " << EX_MEM.RegWrite << EX_MEM.MemToReg;
     }
     cout << endl;
 
@@ -421,10 +443,10 @@ void MEM() {
     if (EX_MEM.MemWrite == '1') {
         // 執行寫入記憶體操作
         cout << (int)MEM_WB.rd << " " << (int)EX_MEM.rt << endl;
-        if (MEM_WB.RegWrite == '1' && MEM_WB.rd == EX_MEM.rt) { // forwarding
-            data_mem[EX_MEM.ALU_result/4] = MEM_WB.ALU_result;
+        if (MEM_WB.RegWrite == '1' && MEM_WB.rd == EX_MEM.rt) {  // forwarding
+            data_mem[EX_MEM.ALU_result / 4] = MEM_WB.ALU_result;
         } else {
-            data_mem[EX_MEM.ALU_result/4] = EX_MEM.Write_data;
+            data_mem[EX_MEM.ALU_result / 4] = EX_MEM.Write_data;
         }
     } else {
         MEM_tmp.ALU_result = EX_MEM.ALU_result;
@@ -442,7 +464,7 @@ void MEM() {
 void WB() {
     cout << "   WB: " << MEM_WB.op;
     if (MEM_WB.op != "") {
-        cout << " " << MEM_WB.RegWrite << MEM_WB.MemToReg;
+        cout << "\t" << MEM_WB.RegWrite << MEM_WB.MemToReg;
     }
     cout << endl;
 
