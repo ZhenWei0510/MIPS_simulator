@@ -180,12 +180,14 @@ int main() {
     } while (!(ins_mem[PC].op == "" && IF_ID.ins.op == "" && ID_EX.op == "" && EX_MEM.op == "" && MEM_WB.op == ""));
     cout << "Total cycles: " << cycle << endl
          << endl;
-    for (int i = 0; i < REG_NUM; i++) {
-        cout << "$" << i << " " << reg_file[i] << endl;
+    for (int i = 1; i < REG_NUM; i++) {
+        // if (reg_file[i] != 1)
+        cout << "$" << i << " = " << reg_file[i] << endl;
     }
     cout << endl;
     for (int i = 0; i < DATA_MEM_SIZE; i++) {
-        cout << "W" << i << " " << data_mem[i] << endl;
+        // if (data_mem[i] != 1)
+        cout << "W" << i << " = " << data_mem[i] << endl;
     }
     return 0;
 }
@@ -302,9 +304,18 @@ void ID() {
         ID_tmp.MemWrite = '1';
         ID_tmp.RegWrite = '0';
         ID_tmp.MemToReg = 'X';
+        // cout << ID_tmp.Read_data_2 << endl;
     } else if (IF_ID.ins.op == "beq") {
         // Load-use hazard detection
         if ((ID_EX.op != "" && ID_EX.MemRead == '1' && (ID_EX.rt == IF_ID.ins.rs || ID_EX.rt == IF_ID.ins.rt)) || (EX_MEM.op != "" && EX_MEM.MemRead == '1' && (EX_MEM.Write_reg == IF_ID.ins.rs || EX_MEM.Write_reg == IF_ID.ins.rt))) {
+            ID_tmp.RegDst = ID_tmp.ALUSrc = '0';
+            ID_tmp.Branch = ID_tmp.MemRead = ID_tmp.MemWrite = '0';
+            ID_tmp.RegWrite = ID_tmp.MemToReg = '0';
+            ID_tmp.op = "";
+            IF_IDWrite = PCWrite = false;
+            return;
+        }
+        if ((ID_EX.op != "" && ID_EX.RegDst == '1' && (ID_EX.rd == IF_ID.ins.rs || ID_EX.rd == IF_ID.ins.rt))) {
             ID_tmp.RegDst = ID_tmp.ALUSrc = '0';
             ID_tmp.Branch = ID_tmp.MemRead = ID_tmp.MemWrite = '0';
             ID_tmp.RegWrite = ID_tmp.MemToReg = '0';
@@ -322,10 +333,12 @@ void ID() {
         }
         // 前前指令為 add/sub
         if (EX_MEM.op != "" && EX_MEM.MemToReg == '0') {
+            // cout << (int)EX_MEM.Write_reg << " " << (int)IF_ID.ins.rs << endl;
             if (EX_MEM.Write_reg == IF_ID.ins.rs) {
-                ID_tmp.zero = EX_MEM.ALU_result == ID_tmp.Read_data_1 ? true : false;
-            } else if (EX_MEM.Write_reg == IF_ID.ins.rt) {
+                // cout << EX_MEM.ALU_result << " " << ID_tmp.Read_data_1 << endl;
                 ID_tmp.zero = EX_MEM.ALU_result == ID_tmp.Read_data_2 ? true : false;
+            } else if (EX_MEM.Write_reg == IF_ID.ins.rt) {
+                ID_tmp.zero = EX_MEM.ALU_result == ID_tmp.Read_data_1 ? true : false;
             }
         }
         ID_tmp.RegDst = 'X';
@@ -374,6 +387,7 @@ void EX() {
     EX_tmp.MemToReg = ID_EX.MemToReg;
 
     EX_tmp.op = ID_EX.op;
+    EX_tmp.Write_data = ID_EX.Read_data_2;
 
     // ALU inputs
     uint32_t input_1 = ID_EX.Read_data_1;
@@ -407,11 +421,11 @@ void EX() {
 
     // // ALUOp
     if (ID_EX.op == "add") {
-        EX_tmp.ALU_result = ID_EX.Read_data_1 + ID_EX.Read_data_2;
+        EX_tmp.ALU_result = input_1 + input_2;
     } else if (ID_EX.op == "sub") {
-        EX_tmp.ALU_result = ID_EX.Read_data_1 - ID_EX.Read_data_2;
+        EX_tmp.ALU_result = input_1 - input_2;
     } else if (ID_EX.op == "lw" || ID_EX.op == "sw") {
-        EX_tmp.ALU_result = ID_EX.Read_data_1 + ID_EX.offset;
+        EX_tmp.ALU_result = input_1 + ID_EX.offset;
     }
 
     // RegDst mux to choose rd or rt
@@ -420,6 +434,7 @@ void EX() {
     EX_tmp.rs = ID_EX.rs;
     EX_tmp.rt = ID_EX.rt;
     EX_tmp.rd = ID_EX.rd;
+    // cout << EX_tmp.ALU_result;
 }
 
 void MEM() {
@@ -442,7 +457,7 @@ void MEM() {
     // cout << EX_MEM.ALU_result << endl;
     if (EX_MEM.MemWrite == '1') {
         // 執行寫入記憶體操作
-        cout << (int)MEM_WB.rd << " " << (int)EX_MEM.rt << endl;
+        // cout << EX_MEM.Write_data << " " << (int)MEM_WB.rd << " " << (int)EX_MEM.rt << endl;
         if (MEM_WB.RegWrite == '1' && MEM_WB.rd == EX_MEM.rt) {  // forwarding
             data_mem[EX_MEM.ALU_result / 4] = MEM_WB.ALU_result;
         } else {
