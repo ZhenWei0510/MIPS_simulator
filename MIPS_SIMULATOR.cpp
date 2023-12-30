@@ -78,9 +78,9 @@ struct ID_EX_pipeline {
     uint8_t rd;
 
     // Register comparator result
-    bool zero;
+    bool equal;
 
-    uint32_t PC;
+    uint32_t Branch_target;
 
     string op;
 } ID_EX, ID_tmp;
@@ -122,10 +122,6 @@ struct MEM_WB_pipeline {
     // The register written in WB stage
     uint8_t Write_reg;
 
-    uint8_t rs;
-    uint8_t rt;
-    uint8_t rd;
-
     string op;
 } MEM_WB, MEM_tmp;
 
@@ -135,7 +131,7 @@ uint32_t reg_file[REG_NUM];         // Register file
 uint32_t data_mem[DATA_MEM_SIZE];   // Data memory
 Instruction ins_mem[INS_MEM_SIZE];  // Instruction memory
 
-bool BranchTaken = false;  // True when branch take
+bool BranchTaken = false;  // True when branch taken
 bool IF_IDWrite = true;    // False when stall
 bool PCWrite = true;       // False when stall
 
@@ -158,20 +154,17 @@ int main() {
         update_pipeline_register();
 
         cout << endl;
-        // if (cycle == 50) break;
     } while (!(ins_mem[PC].op == "" && IF_ID.ins.op == "" && ID_EX.op == "" && EX_MEM.op == "" && MEM_WB.op == ""));
 
     // Print the final result
     cout << "Total cycles: " << cycle << endl
          << endl;
-    for (int i = 1; i < REG_NUM; i++) {
-        if (reg_file[i] != 1)
-            cout << "$" << i << " = " << reg_file[i] << endl;
+    for (int i = 0; i < REG_NUM; i++) {
+        cout << "$" << i << " = " << reg_file[i] << endl;
     }
     cout << endl;
     for (int i = 0; i < DATA_MEM_SIZE; i++) {
-        if (data_mem[i] != 1)
-            cout << "W" << i << " = " << data_mem[i] << endl;
+        cout << "W" << i << " = " << data_mem[i] << endl;
     }
 
     return 0;
@@ -189,7 +182,7 @@ void initialize() {
         data_mem[i] = 1;
     }
 
-    // 初始化 pipline registers's contorl signal
+    // Initialize pipline registers's contorl signal
     ID_EX.RegDst = ID_EX.ALUSrc = ID_EX.Branch = ID_EX.MemRead = ID_EX.MemWrite = ID_EX.RegWrite = ID_EX.MemToReg = '0';
     EX_MEM.Branch = EX_MEM.MemRead = EX_MEM.MemWrite = EX_MEM.RegWrite = EX_MEM.MemToReg = '0';
     MEM_WB.RegWrite = MEM_WB.MemToReg = '0';
@@ -277,14 +270,14 @@ void ID() {
     }
 
     // Calculate branch target
-    ID_tmp.PC = IF_ID.PC + IF_ID.ins.constant;
+    ID_tmp.Branch_target = IF_ID.PC + IF_ID.ins.constant;
 
     // Read data from register file
     ID_tmp.Read_data_1 = reg_file[IF_ID.ins.rs];
     ID_tmp.Read_data_2 = reg_file[IF_ID.ins.rt];
 
     // Register comparator
-    ID_tmp.zero = ID_tmp.Read_data_1 == ID_tmp.Read_data_2;
+    ID_tmp.equal = ID_tmp.Read_data_1 == ID_tmp.Read_data_2;
 
     if (IF_ID.ins.op == "add" || IF_ID.ins.op == "sub") {
         ID_tmp.RegDst = '1';
@@ -311,41 +304,39 @@ void ID() {
         ID_tmp.RegWrite = '0';
         ID_tmp.MemToReg = 'X';
     } else if (IF_ID.ins.op == "beq") {
-        // Load-use hazard detection
-        if ((EX_MEM.op != "" && EX_MEM.MemRead == '1' && (EX_MEM.Write_reg == IF_ID.ins.rs || EX_MEM.Write_reg == IF_ID.ins.rt))) {
+        // 檢查 beq 的前前指令是否為 lw 且其目的地暫存器為 beq 的 source oprand
+        bool lw__beq = EX_MEM.op != "" && EX_MEM.MemRead == '1' && (EX_MEM.Write_reg == IF_ID.ins.rs || EX_MEM.Write_reg == IF_ID.ins.rt);
+        // 檢查 beq 的前指令是否為 ALU 指令且其目的地暫存器為 beq 的 source oprand
+        bool ALU_beq = ID_EX.op != "" && ID_EX.RegWrite == '1' && ID_EX.RegDst == '1' && (ID_EX.rd == IF_ID.ins.rs || ID_EX.rd == IF_ID.ins.rt);
+
+        if (lw__beq || ALU_beq) {
+            // Insert bubble
             ID_tmp.RegDst = ID_tmp.ALUSrc = '0';
             ID_tmp.Branch = ID_tmp.MemRead = ID_tmp.MemWrite = '0';
             ID_tmp.RegWrite = ID_tmp.MemToReg = '0';
             ID_tmp.op = "";
+            // Prevent update from PC and IF/ID pipeline register
             IF_IDWrite = PCWrite = false;
             return;
         }
-        if ((ID_EX.op != "" && ID_EX.RegDst == '1' && (ID_EX.rd == IF_ID.ins.rs || ID_EX.rd == IF_ID.ins.rt))) {
-            ID_tmp.RegDst = ID_tmp.ALUSrc = '0';
-            ID_tmp.Branch = ID_tmp.MemRead = ID_tmp.MemWrite = '0';
-            ID_tmp.RegWrite = ID_tmp.MemToReg = '0';
-            ID_tmp.op = "";
-            IF_IDWrite = PCWrite = false;
-            return;
-        }
-        // 前前前指令為 lw
-        if (MEM_WB.op != "" && MEM_WB.MemToReg == '1') {
-            if (MEM_WB.Write_reg == IF_ID.ins.rs) {
-                ID_tmp.zero = MEM_WB.Read_data == ID_tmp.Read_data_1;
-            } else if (MEM_WB.Write_reg == IF_ID.ins.rt) {
-                ID_tmp.zero = MEM_WB.Read_data == ID_tmp.Read_data_2;
-            }
-        }
-        // 前前指令為 add/sub
-        if (EX_MEM.op != "" && EX_MEM.MemToReg == '0') {
-            // cout << (int)EX_MEM.Write_reg << " " << (int)IF_ID.ins.rs << endl;
+
+        // Forward from MEM/WB (前前前指令)
+        // if (MEM_WB.op != "") {
+        //     if (MEM_WB.Write_reg == IF_ID.ins.rs) {
+        //         ID_tmp.equal = MEM_WB.Read_data == ID_tmp.Read_data_1;
+        //     } else if (MEM_WB.Write_reg == IF_ID.ins.rt) {
+        //         ID_tmp.equal = MEM_WB.Read_data == ID_tmp.Read_data_2;
+        //     }
+        // }
+        // Forward from EX/MEM (前前指令)
+        if (EX_MEM.op != "") {
             if (EX_MEM.Write_reg == IF_ID.ins.rs) {
-                // cout << EX_MEM.ALU_result << " " << ID_tmp.Read_data_1 << endl;
-                ID_tmp.zero = EX_MEM.ALU_result == ID_tmp.Read_data_2;
+                ID_tmp.equal = EX_MEM.ALU_result == ID_tmp.Read_data_2;
             } else if (EX_MEM.Write_reg == IF_ID.ins.rt) {
-                ID_tmp.zero = EX_MEM.ALU_result == ID_tmp.Read_data_1;
+                ID_tmp.equal = EX_MEM.ALU_result == ID_tmp.Read_data_1;
             }
         }
+
         ID_tmp.RegDst = 'X';
         ID_tmp.ALUSrc = '0';
         ID_tmp.Branch = '1';
@@ -385,9 +376,7 @@ void EX() {
     EX_tmp.MemToReg = ID_EX.MemToReg;
 
     EX_tmp.op = ID_EX.op;
-    EX_tmp.rs = ID_EX.rs;
     EX_tmp.rt = ID_EX.rt;
-    EX_tmp.rd = ID_EX.rd;
 
     EX_tmp.Write_data = ID_EX.Read_data_2;
 
@@ -450,25 +439,24 @@ void MEM() {
     MEM_tmp.Write_reg = EX_MEM.Write_reg;
 
     MEM_tmp.op = EX_MEM.op;
-    MEM_tmp.rs = EX_MEM.rs;
-    MEM_tmp.rt = EX_MEM.rt;
-    MEM_tmp.rd = EX_MEM.rd;
 
     if (EX_MEM.MemRead == '1') {
-        // 執行讀取記憶體操作，將結果存入 MEM_WB 的 ALU_result
+        // 執行讀取記憶體操作，將結果存入 MEM_WB 的 Read_data
         MEM_tmp.Read_data = data_mem[EX_MEM.ALU_result / 4];
     }
 
     if (EX_MEM.MemWrite == '1') {
         // 執行寫入記憶體操作
-        if (MEM_WB.RegWrite == '1' && MEM_WB.Write_reg == EX_MEM.rt) {  // forwarding
+        if (MEM_WB.RegWrite == '1' && MEM_WB.Write_reg == EX_MEM.rt) {
+            // Forwarding
             data_mem[EX_MEM.ALU_result / 4] = MEM_WB.ALU_result;
         } else {
+            // Not forwarding
             data_mem[EX_MEM.ALU_result / 4] = EX_MEM.Write_data;
         }
-    } else {
-        MEM_tmp.ALU_result = EX_MEM.ALU_result;
     }
+
+    MEM_tmp.ALU_result = EX_MEM.ALU_result;
 }
 
 void WB() {
@@ -488,6 +476,21 @@ void WB() {
 }
 
 void update_pipeline_register() {
+    // Update IF/ID pipeline register and PC
+    if (IF_IDWrite) {
+        IF_ID.ins = IF_tmp.ins;
+    }
+    if (PCWrite) {
+        if (ID_tmp.equal && ID_tmp.Branch == '1') {
+            // Branch taken
+            IF_ID.ins.op = "";
+            PC = ID_tmp.Branch_target;
+        } else {
+            // Branch not taken
+            PC = IF_ID.PC = IF_tmp.PC;
+        }
+    }
+
     // Update ID/EX pipieline register
     ID_EX.RegDst = ID_tmp.RegDst;
     ID_EX.ALUSrc = ID_tmp.ALUSrc;
@@ -499,24 +502,11 @@ void update_pipeline_register() {
     ID_EX.Read_data_1 = ID_tmp.Read_data_1;
     ID_EX.Read_data_2 = ID_tmp.Read_data_2;
     ID_EX.offset = ID_tmp.offset;
-    ID_EX.zero = ID_tmp.zero;
-    ID_EX.PC = ID_tmp.PC;
+    ID_EX.equal = ID_tmp.equal;
     ID_EX.op = ID_tmp.op;
     ID_EX.rs = ID_tmp.rs;
     ID_EX.rt = ID_tmp.rt;
     ID_EX.rd = ID_tmp.rd;
-
-    if (IF_IDWrite) {
-        IF_ID.ins = IF_tmp.ins;
-    }
-    if (PCWrite) {
-        if (ID_EX.zero && ID_EX.Branch == '1') {
-            IF_ID.ins.op = "";
-            PC = ID_EX.PC;
-        } else {
-            IF_ID.PC = PC = IF_tmp.PC;
-        }
-    }
 
     // Update EX/MEM pipieline register
     EX_MEM.Branch = EX_tmp.Branch;
@@ -528,9 +518,7 @@ void update_pipeline_register() {
     EX_MEM.Write_data = EX_tmp.Write_data;
     EX_MEM.Write_reg = EX_tmp.Write_reg;
     EX_MEM.op = EX_tmp.op;
-    EX_MEM.rs = EX_tmp.rs;
     EX_MEM.rt = EX_tmp.rt;
-    EX_MEM.rd = EX_tmp.rd;
 
     // Update MEM/WB pipieline register
     MEM_WB.RegWrite = MEM_tmp.RegWrite;
@@ -539,7 +527,4 @@ void update_pipeline_register() {
     MEM_WB.ALU_result = MEM_tmp.ALU_result;
     MEM_WB.Write_reg = MEM_tmp.Write_reg;
     MEM_WB.op = MEM_tmp.op;
-    MEM_WB.rs = MEM_tmp.rs;
-    MEM_WB.rt = MEM_tmp.rt;
-    MEM_WB.rd = MEM_tmp.rd;
 }
