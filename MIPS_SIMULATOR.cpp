@@ -136,12 +136,13 @@ bool IF_IDWrite = true;    // False when stall
 bool PCWrite = true;       // False when stall
 
 int cycle = 0;
+int ins_cnt;
 
 int main() {
     initialize();
 
     // Load instructions to instruction memory
-    int ins_cnt = load_instructions();
+    ins_cnt = load_instructions();
 
     do {
         cout << "Cycle " << ++cycle << endl;
@@ -171,6 +172,9 @@ int main() {
 }
 
 void initialize() {
+    // Initialize program counter
+    PC = 0;
+
     // Initialize register file
     reg_file[0] = 0;
     for (int i = 1; i < REG_NUM; i++) {
@@ -250,8 +254,12 @@ int load_instructions() {
 
 void IF() {
     cout << "   IF: " << ins_mem[PC].op << endl;
-    IF_tmp.ins = ins_mem[PC];
-    IF_tmp.PC = PC + 1;
+    if (PC < ins_cnt) {
+        IF_tmp.ins = ins_mem[PC];
+        IF_tmp.PC = PC + 1;
+    } else {
+        IF_tmp.ins.op = "";
+    }
 }
 
 void ID() {
@@ -275,9 +283,6 @@ void ID() {
     // Read data from register file
     ID_tmp.Read_data_1 = reg_file[IF_ID.ins.rs];
     ID_tmp.Read_data_2 = reg_file[IF_ID.ins.rt];
-
-    // Register comparator
-    ID_tmp.equal = ID_tmp.Read_data_1 == ID_tmp.Read_data_2;
 
     if (IF_ID.ins.op == "add" || IF_ID.ins.op == "sub") {
         ID_tmp.RegDst = '1';
@@ -305,9 +310,11 @@ void ID() {
         ID_tmp.MemToReg = 'X';
     } else if (IF_ID.ins.op == "beq") {
         // 檢查 beq 的前前指令是否為 lw 且其目的地暫存器為 beq 的 source oprand
-        bool lw__beq = EX_MEM.op != "" && EX_MEM.MemRead == '1' && (EX_MEM.Write_reg == IF_ID.ins.rs || EX_MEM.Write_reg == IF_ID.ins.rt);
+        bool lw__beq = EX_MEM.op != "" && EX_MEM.MemRead == '1'
+                        && (EX_MEM.Write_reg == IF_ID.ins.rs || EX_MEM.Write_reg == IF_ID.ins.rt);
         // 檢查 beq 的前指令是否為 ALU 指令且其目的地暫存器為 beq 的 source oprand
-        bool ALU_beq = ID_EX.op != "" && ID_EX.RegWrite == '1' && ID_EX.RegDst == '1' && (ID_EX.rd == IF_ID.ins.rs || ID_EX.rd == IF_ID.ins.rt);
+        bool ALU_beq = ID_EX.op != "" && ID_EX.RegWrite == '1' && ID_EX.RegDst == '1'
+                        && (ID_EX.rd == IF_ID.ins.rs || ID_EX.rd == IF_ID.ins.rt);
 
         if (lw__beq || ALU_beq) {
             // Insert bubble
@@ -320,6 +327,9 @@ void ID() {
             return;
         }
 
+        // Register comparator
+        ID_tmp.equal = (ID_tmp.Read_data_1 == ID_tmp.Read_data_2);
+
         // Forward from MEM/WB (前前前指令)
         // if (MEM_WB.op != "") {
         //     if (MEM_WB.Write_reg == IF_ID.ins.rs) {
@@ -331,9 +341,9 @@ void ID() {
         // Forward from EX/MEM (前前指令)
         if (EX_MEM.op != "") {
             if (EX_MEM.Write_reg == IF_ID.ins.rs) {
-                ID_tmp.equal = EX_MEM.ALU_result == ID_tmp.Read_data_2;
+                ID_tmp.equal = (EX_MEM.ALU_result == ID_tmp.Read_data_2);
             } else if (EX_MEM.Write_reg == IF_ID.ins.rt) {
-                ID_tmp.equal = EX_MEM.ALU_result == ID_tmp.Read_data_1;
+                ID_tmp.equal = (EX_MEM.ALU_result == ID_tmp.Read_data_1);
             }
         }
 
